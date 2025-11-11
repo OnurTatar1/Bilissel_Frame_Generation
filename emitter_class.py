@@ -1,55 +1,87 @@
 
 import random
+from types import NoneType
 import numpy as np
+from wave_generator_functions import pri_values, generate_waveform
 global c
 c= 299792458
 class Emitter:
-    def __init__(self,ID=None, wave_type=None, emitter_complexity=None, jamming_library=None, PRI_range=None, PW=None,
-                 number_of_pulse=None, PRI_type=None, PRI_agile_ampl=None, amplitude=None, 
-                 wave_param_L=None, wave_param_B=None, fc=None, fs=None, frame_duration=None,
-                 number_of_pulse_range=None, PRI_agile_ampl_range=None, 
-                 amplitude_range=None, fc_range=None, PRI_mean=None,band_width_range=None,start_position=None,velocity=None,locked_target=None,
+    def __init__(self,ID=None, wave_type_range=None, emitter_complexity=None, PW_range=None,
+                 number_of_pulse_range=None, PRI_type_range=None, PRI_agile_ampl_range=None, 
+                 amplitude_range=None, fc_range=None, PRI_mean_range=None,wave_param_B_range=None,start_position=None,
+                 velocity=None,locked_target=None,
                  antenna_gain=None,SNR_aim=None,current_noise_power=None, Antenna_Scanning_Type=None,
-                 Antenna_Scanning_step=None, Antenna_Scanning_sector_Azimuth=None,Antenna_Scanning_sector_elevation=None):
-        self.number_of_pulse_range = number_of_pulse_range
-        self.PRI_agile_ampl_range = PRI_agile_ampl_range
-        self.amplitude_range = amplitude_range
-        self.fc_range = fc_range
-        self.fs = fs
-        self.frame_duration = frame_duration
+                 Antenna_Scanning_step=None, Antenna_Scanning_sector_Azimuth=None,Antenna_Scanning_sector_elevation=None,
+                 antenna_radiation_pattern=None, fs=None, frame_duration=None):
+        # Identification & basic configuration
         self.ID = ID
-        self.wave_type = wave_type
         self.emitter_complexity = emitter_complexity
-        self.jamming_library = jamming_library
-        self.PRI_range = PRI_range
-        self.PW = PW
-        self.number_of_pulse = number_of_pulse
-        self.PRI_type = PRI_type
-        self.PRI_agile_ampl = PRI_agile_ampl
-        self.amplitude = amplitude
-        self.wave_param_L = wave_param_L
-        self.wave_param_B = wave_param_B
-        self.fc = fc
-        self.fs = fs
         self.frame_duration = frame_duration
-        self.PRI_mean = PRI_mean
-        self.band_width_range = band_width_range
-        self.start_position = start_position
-        self.velocity = velocity
-        self.locked_target = locked_target
+        self.fs = fs
+
+        # Pulse Params
+        self.wave_type_range = wave_type_range
+        self.PW_range = PW_range
+        self.number_of_pulse_range = number_of_pulse_range
+        self.wave_param_L = None
+        self.wave_param_B = None
+        self.fc_range = fc_range
+        self.wave_param_B_range = wave_param_B_range
+        self.amplitude_range = amplitude_range
+
+        # PRI Params
+        self.PRI_type_range = PRI_type_range
+        self.PRI_agile_ampl_range = PRI_agile_ampl_range
+        self.PRI_mean_range = PRI_mean_range
+
+        # Motion & tracking
+        self.start_position = np.array(start_position, dtype=float) if start_position is not None else None
+        self.velocity = np.array(velocity, dtype=float) if velocity is not None else None
+        self.locked_target = np.array(locked_target, dtype=float) if isinstance(locked_target, (list, tuple, np.ndarray)) else locked_target
         self.locked_target_position = None
+
+        # Antenna configuration
         self.antenna_gain = antenna_gain
         self.SNR_aim = SNR_aim
         self.Antenna_Scanning_Type = Antenna_Scanning_Type
         self.Antenna_Scanning_step = Antenna_Scanning_step
         self.Antenna_Scanning_sector_Azimuth = Antenna_Scanning_sector_Azimuth
         self.Antenna_Scanning_sector_elevation = Antenna_Scanning_sector_elevation
-        self.antenna_radiation_pattern 
+        self.antenna_radiation_pattern = antenna_radiation_pattern
+
+        
 
 
-    def select_waveform_parameters(self):
-        self.wave_type = random.choice(self.wave_type)
-        self.pulse_width = random.uniform(self.PW[0], self.PW[1])
+    def set_waveform_type(self):
+        self.wave_type = random.choice(self.wave_type_range)
+        return self
+    
+    def set_carrier_frequency(self):
+        
+        max_fc = self.fc_range[1] - self.wave_param_B   # Maximum f_c to avoid aliasing
+        min_fc = self.fc_range[0]  # Minimum f_c to keep signal in positive frequencies
+        fc = random.uniform(min_fc, max_fc)
+        self.fc = fc
+        return self
+
+    def set_number_of_pulse(self):
+        self.number_of_pulse = random.randint(self.number_of_pulse_range[0], self.number_of_pulse_range[1])
+        return self
+
+    def set_PRI_params_calculate_PRI_values(self):
+        self.PRI_type = random.choice(self.PRI_type_range)
+        self.PRI_agile_ampl = random.uniform(self.PRI_agile_ampl_range[0], self.PRI_agile_ampl_range[1])
+        self.PRI_mean = random.uniform(self.PRI_mean_range[0], self.PRI_mean_range[1])
+        self.PRI_values = pri_values(self)
+        return self
+
+    def set_pulse_width(self):
+        min_PRI=min(self.PRI_values)
+        max_PW= max(self.PW_range[1],min_PRI/1.5)
+        self.pulse_width = random.uniform(self.PW_range[0], max_PW)
+        return self
+
+    def set_wave_param_L(self):
         if self.wave_type == "barker":
             self.wave_param_L = random.choice([2, 7, 11, 13])
         elif self.wave_type == "costas":
@@ -60,28 +92,37 @@ class Emitter:
             self.wave_param_L = random.randint(4, 50)
         else:
             self.wave_param_L = 1
-
-        if self.wave_type in ["rect", "barker", "p3", "p4"]:
-            self.wave_param_B = self.wave_param_L / self.pulse_width
-        elif self.wave_type in ["frank", "p1", "p2"]:
-            self.wave_param_B = self.wave_param_L * self.wave_param_L / self.pulse_width
-        elif self.wave_type == "costas":
-            self.wave_param_B = random.uniform(self.band_width_range[0], self.band_width_range[1])
-        else:
-            self.wave_param_B = random.uniform(self.band_width_range[0], self.band_width_range[1])
         return self
-    
-    def get_carrier_frequency_range(self):
-        max_fc = self.fc_range[1] - self.wave_param_B   # Maximum f_c to avoid aliasing
-        min_fc = self.fc_range[0]  # Minimum f_c to keep signal in positive frequencies
-        fc = random.uniform(min_fc, max_fc)
-        self.fc = fc
+
+    def set_wave_param_B(self):
+        if self.wave_type == "costas" or self.wave_type == "LFM":
+            self.wave_param_B = random.uniform(self.wave_param_B_range[0], self.wave_param_B_range[1])
+        else:
+            self.wave_param_B = self.wave_param_L/self.pulse_width
+        return self
+
+
+    def generate_waveform(self):
+        self.set_waveform_type()
+        self.set_number_of_pulse()
+        self.set_PRI_params_calculate_PRI_values()
+        self.set_pulse_width()
+        self.set_wave_param_L()
+        self.set_wave_param_B()
+        self.set_carrier_frequency()
+        self.waveform=generate_waveform(self)
+        return self
+
+    def calculate_start_index(self,frame_length):
+        max_start = int(31*frame_length/32 - len(self.waveform)) 
+        min_start = int(frame_length/32)
+        self.start_index = random.randint(min_start, int(max_start))
         return self
 
     def update_position(self,time):
         self.current_position = self.start_position + self.velocity*time
         return self
-        
+
     def locking_to_a_target(self, locked_emitter):
         if isinstance(self.locked_target, Emitter):
             self.locked_target_position = locked_emitter.current_position
@@ -101,6 +142,7 @@ class Emitter:
     def antenna_scanning_gain_calculator(self):
         self.antenna_gain = self.antenna_gain_calculator(self.current_position, self.locked_target_position)
         return self
+    
     def radiation_pattern_calculator(self):
         if self.Antenna_Scanning_Type == "deneme":
             elevation = np.linspace(-90, 90, 180)
@@ -118,23 +160,24 @@ class Emitter:
                 (el_grid.ravel(), az_grid.ravel(), pdf.ravel())
             )
         return self
-# Example usage:
-if __name__ == "__main__":
-    # Example 1: Create emitter with custom range parameters
+        
 
-    my_emitter = Emitter(
-        ID=1,
-        wave_type=['rect', 'p2'], 
-        emitter_complexity=5,  # Fixed integer value
-        jamming_library='barrage', 
-        PRI_range=[1e-3, 1e-4], 
-        PW=[1e-5, 5e-5],
-        number_of_pulse_range=[3, 6],
-        PRI_agile_ampl_range=[0.1, 0.5],
-        amplitude_range=[0.5, 1.5],
-        fc_range=[50e3, 500e3],
-        fs=2e7,
-        frame_duration=0.2,
-        band_width_range=[1e6, 10e6]
-    )
-   
+    def check_parameter_limits_valid(self):
+        max_waveform_length=self.number_of_pulse_range[1]*self.PRI_mean_range[1]+self.PW_range[1]
+        if max_waveform_length>self.frame_duration:
+            print("Waveform length is greater than frame duration")
+        min_waveform_length=self.PW_range[0]*self.number_of_pulse_range[0]*self.PRI_mean_range[0]
+        if min_waveform_length<0:
+            print("Waveform length is less than frame duration")
+        min_chip_duration=self.PW_range[0]/50
+        print(f"Minimum chip duration is {min_chip_duration*self.fs} sample")
+
+        max_frequency=self.fc_range[1]+self.wave_param_B_range[1]
+        if max_frequency>self.fs/2:
+            print("Maximum frequency is greater than Nyquist frequency")
+        
+        max_frequency=self.fc_range[1]+20/self.PW_range[0]
+        if max_frequency>self.fs/2:
+            print("Maximum frequency is greater than Nyquist frequency")
+        return 0
+

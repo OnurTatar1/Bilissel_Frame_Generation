@@ -1,5 +1,8 @@
 import numpy as np
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from emitter_class import Emitter
 # ----------------------------------------------------------------------
 # 1. PRI dizisi:
 # ----------------------------------------------------------------------
@@ -33,12 +36,11 @@ def make_pri_agile(transmitter_: dict) -> np.ndarray:
 def start_time_calculator(PRI_values:np.ndarray) -> np.ndarray:
     return np.concatenate(([0.0], np.cumsum(PRI_values[:-1])))
 
-def pri_values(transmitter_: dict) -> np.ndarray:
-    N        = int(transmitter_.get("number_of_pulse", 0))
-    mode     = str(transmitter_.get("PRI_mode", "stable")).lower()
-    mean_PRI = float(transmitter_.get("PRI_mean", 0.0))
-    PRI_amp      = float(transmitter_.get("PRI_agile_ampl",
-                                      transmitter_.get("PRI_agileness_amplitude", 0.0)))
+def pri_values(transmitter:'Emitter') -> np.ndarray:
+    N        = int(transmitter.number_of_pulse)
+    mode     = str(transmitter.PRI_type).lower()
+    mean_PRI = float(transmitter.PRI_mean)
+    PRI_amp      = float(transmitter.PRI_agile_ampl)
 
 
     if mode == "stable":
@@ -64,30 +66,30 @@ def pri_values(transmitter_: dict) -> np.ndarray:
 # ----------------------------------------------------------------------
 # 2. Darbe (pulse) üreticileri
 # ----------------------------------------------------------------------
-def _rect_pulse(tx):
-    Ts  = 1.0 / tx["f_s"]
-    tau = tx["pulse_width"]
+def _rect_pulse(tx:'Emitter'):
+    Ts  = 1.0 / tx.fs
+    tau = tx.pulse_width
     n_samples = int(tau//Ts)
     t = np.arange(0.0, n_samples*Ts, Ts); 
-    return np.cos(2*np.pi*tx["f_c"]*t)
+    return np.cos(2*np.pi*tx.fc*t)
 
-def _barker_pulse(tx):
+def _barker_pulse(tx:'Emitter'):
     seq_tbl = {2:[1,-1],3:[1,1,-1],4:[1,1,-1,1],5:[1,1,1,-1,1],
                7:[1,1,1,-1,-1,1,-1],
                11:[1,1,1,-1,-1,-1,1,-1,-1,1,-1],
                13:[1,1,1,1,1,-1,-1,1,1,-1,1,-1,1]}
-    L   = int(tx["wave_param_L"])
+    L   = int(tx.wave_param_L)
     if L not in seq_tbl:
         raise ValueError("Unsupported Barker length.")
-    Ts  = 1.0 / tx["f_s"]
-    tau = tx["pulse_width"]
+    Ts  = 1.0 / tx.fs
+    tau = tx.pulse_width
     Tc  = tau / L
     n_samples = int(Tc//Ts)
     t_c = np.arange(0.0, n_samples*Ts, Ts); spc = t_c.size
     pulse = np.zeros(L*spc)
     for k, chip in enumerate(seq_tbl[L]):
         idx = slice(k*spc, (k+1)*spc)
-        pulse[idx] = chip * np.cos(2*np.pi*tx["f_c"]*(t_c + k*Tc))
+        pulse[idx] = chip * np.cos(2*np.pi*tx.fc*(t_c + k*Tc))
     return pulse
 
 def _welch_costas_sequence(L, p=2):
@@ -124,26 +126,26 @@ def _is_primitive_root(g, p):
     actual = set(pow(g, k, p) for k in range(1, p))
     return required == actual
 
-def _costas_pulse(tx):
-    L   = int(tx["wave_param_L"])
-    B   = tx["wave_param_B"]
-    B=B/L
-    Ts  = 1.0 / tx["f_s"]
-    tau = tx["pulse_width"]
+def _costas_pulse(tx:'Emitter'):
+    L   = int(tx.wave_param_L)-1
+    B   = tx.wave_param_B
+    B=B/(L-1)
+    Ts  = 1.0 / tx.fs
+    tau = tx.pulse_width
     Tc  = tau / L
     n_samples = int(Tc//Ts)
     t_c = np.arange(0.0, n_samples*Ts, Ts); spc = t_c.size
     pulse = np.zeros(L*spc)
-    perm  = _welch_costas_sequence(L)
+    perm  = _welch_costas_sequence(L+1)
     for k, p in enumerate(perm):
-        f_inst    = tx["f_c"] + (p)*B
+        f_inst    = tx.fc + (p)*B
         pulse[k*spc:(k+1)*spc] = np.cos(2*np.pi*f_inst*t_c)
     return pulse
 
-def _frank_pulse(tx):
-    M   = int(tx["wave_param_L"])
+def _frank_pulse(tx:'Emitter'):
+    M   = int(tx.wave_param_L)
     L   = M*M
-    Ts  = 1.0/tx["f_s"]; tau = tx["pulse_width"]
+    Ts  = 1.0/tx.fs; tau = tx.pulse_width
     Tc = tau/L
     n_pulse = int(tau/Ts)
     n_samples = int(Tc//Ts)
@@ -154,22 +156,22 @@ def _frank_pulse(tx):
     
     for k, ph in enumerate(phi):
         idx = slice(k*spc, (k+1)*spc)
-        carrier = np.cos(2*np.pi*tx["f_c"]*(t_c + k*Tc))
-        pulse[idx] = carrier * np.cos(ph)
+        carrier = np.cos(2*np.pi*tx.fc*(t_c + k*Tc) + ph)
+        pulse[idx] = carrier 
     return pulse
 
-def _lfm_pulse(tx):
-    B   = tx["wave_param_B"]
-    tau = tx["pulse_width"]
+def _lfm_pulse(tx:'Emitter'):
+    B   = tx.wave_param_B
+    tau = tx.pulse_width
     mu  = B / tau
-    Ts  = 1.0/tx["f_s"]
+    Ts  = 1.0/tx.fs
     t_p = np.arange(0.0, tau, Ts)
-    return np.cos(2*np.pi*tx["f_c"]*t_p + np.pi*mu*t_p**2)
+    return np.cos(2*np.pi*tx.fc*t_p + np.pi*mu*t_p**2)
 
-def _px_pulse(tx):
-    code = tx["transmitter_type"]  # p1, p2, p3, p4
-    L0   = int(tx["wave_param_L"])
-    Ts   = 1.0/tx["f_s"]; tau = tx["pulse_width"]
+def _px_pulse(tx:'Emitter'):
+    code = tx.wave_type  # p1, p2, p3, p4
+    L0   = int(tx.wave_param_L)
+    Ts   = 1.0/tx.fs; tau = tx.pulse_width
     if code in {"p1","p2"}:
         L = L0*L0
     else:
@@ -194,24 +196,24 @@ def _px_pulse(tx):
     pulse = np.zeros(L*spc)
     for k, ph in enumerate(phi):
         idx = slice(k*spc, (k+1)*spc)
-        carrier = np.cos(2*np.pi*tx["f_c"]*(t_c + k*Tc) + ph)
+        carrier = np.cos(2*np.pi*tx.fc*(t_c + k*Tc) + ph)
         pulse[idx] = carrier
     return pulse
 
-def _fmcw_pulse(tx):
-    B   = tx["wave_param_B"]
-    tau = tx["pulse_width"]
+def _fmcw_pulse(tx:'Emitter'):
+    B   = tx.wave_param_B
+    tau = tx.pulse_width
     k   = B / tau
-    Ts  = 1.0/tx["f_s"]
+    Ts  = 1.0/tx.fs
     t_p = np.arange(0.0, tau-Ts, Ts)
-    f0  = tx["f_c"] - B/2.0     # süpürme fc çevresinde simetrik
+    f0  = tx.fc - B/2.0     # süpürme fc çevresinde simetrik
     return np.cos(2*np.pi*(f0*t_p + 0.5*k*t_p**2))
 
 
 # ----------------------------------------------------------------------
 # 3. Darbeyi ana dalgaformuna yazdırmak
 # ----------------------------------------------------------------------
-def _place_pulses(pulse, start_times, Ts,pulse_width,code_length):
+def _place_pulses(pulse, start_times, Ts):
     L = pulse.size
     pulses_placed = 0
     waveform = np.array([], dtype=complex)
@@ -232,32 +234,27 @@ def _place_pulses(pulse, start_times, Ts,pulse_width,code_length):
 # ----------------------------------------------------------------------
 # 4. Dışarıdan çağrılacak ana fonksiyon
 # ----------------------------------------------------------------------
-def generate_waveform(transmitter_: dict,PRI_values:np.ndarray) -> np.ndarray:
+def generate_waveform(transmitter: 'Emitter') -> np.ndarray:
 
     # Zaman ekseni
-    f_s = float(transmitter_["f_s"])
-    pulse_width = float(transmitter_["pulse_width"])
-    code_length = float(transmitter_["wave_param_L"])
-    Ts  = 1.0 / f_s
-    transmitter_["Ts"] = Ts   # alt fonksiyonlar isterse kullanabilir
-
+    Ts  = 1.0 / transmitter.fs
+    transmitter.Ts = Ts   # alt fonksiyonlar isterse kullanabilir
+    PRI_values=transmitter.PRI_values
     # Darbe başlangıç zamanları
     start_times = start_time_calculator(PRI_values)
-
+    start_indexes = np.round(start_times*transmitter.fs).astype(int)
     # Darbe tipi seçimi
-    wt = transmitter_.get("transmitter_type", "rect").lower()
-    if   wt == "rect":   pulse = _rect_pulse(transmitter_)
-    elif wt == "barker": pulse = _barker_pulse(transmitter_)
-    elif wt == "costas": pulse = _costas_pulse(transmitter_)
-    elif wt == "frank":  pulse = _frank_pulse(transmitter_)
-    elif wt == "lfm":    pulse = _lfm_pulse(transmitter_)
-    elif wt in {"p1","p2","p3","p4"}: pulse = _px_pulse(transmitter_)
-    elif wt == "fmcw":   pulse = _fmcw_pulse(transmitter_)
+    wt = transmitter.wave_type
+    if   wt == "rect":   pulse = _rect_pulse(transmitter)
+    elif wt == "barker": pulse = _barker_pulse(transmitter)
+    elif wt == "costas": pulse = _costas_pulse(transmitter)
+    elif wt == "frank":  pulse = _frank_pulse(transmitter)
+    elif wt == "lfm":    pulse = _lfm_pulse(transmitter)
+    elif wt in {"p1","p2","p3","p4"}: pulse = _px_pulse(transmitter)
+    elif wt == "fmcw":   pulse = _fmcw_pulse(transmitter)
     else:
         raise ValueError(f"Unknown transmitter_type: {wt}")
-
-    waveform = _place_pulses(pulse, start_times, Ts,pulse_width,code_length)
-
+    waveform = _place_pulses(pulse, start_times,Ts)
     return waveform
 
 def pulse_indices(waveform):
@@ -283,65 +280,3 @@ def reflector(waveform,reflection_snr_db,reflection_time_shift,fs):
     reflected_Waveform = reflected_Waveform * np.exp(1j * phase_shift)
     reflected_Waveform = np.concatenate((np.zeros(samples_shift), reflected_Waveform))
     return reflected_Waveform
-# ----------------------------------------------------------------------
-# 5. Main section - Example usage
-# ----------------------------------------------------------------------
-if __name__ == "__main__":
-    # Example 1: Simple rectangular pulse
-    print("Generating rectangular pulse waveform...")
-    transmitter_rect = {
-        "f_c": 10e6,              # Carrier frequency: 10 MHz
-        "f_s": 100e6,             # Sampling frequency: 100 MHz
-        "pulse_width": 1e-6,      # Pulse width: 1 microsecond
-        "transmitter_type": "rect",
-        "wave_param_L": 1,        # Not used for rect
-        "wave_param_B": 1e6,      # Not used for rect
-        "number_of_pulse": 5,     # Number of pulses
-        "PRI_mode": "stable",     # Stable PRI
-        "PRI_mean": 10e-6         # Mean PRI: 10 microseconds
-    }
-    
-    waveform_rect = generate_waveform(transmitter_rect)
-    t_rect = np.arange(len(waveform_rect)) / transmitter_rect["f_s"]
-    
-    # Example 2: LFM (Linear Frequency Modulated) pulse
-    print("Generating LFM pulse waveform...")
-    transmitter_lfm = {
-        "f_c": 10e6,              # Carrier frequency: 10 MHz
-        "f_s": 100e6,             # Sampling frequency: 100 MHz
-        "pulse_width": 2e-6,      # Pulse width: 2 microseconds
-        "transmitter_type": "lfm",
-        "wave_param_L": 1,        # Not used for LFM
-        "wave_param_B": 5e6,      # Bandwidth: 5 MHz
-        "number_of_pulse": 3,     # Number of pulses
-        "PRI_mode": "staggered",  # Staggered PRI
-        "PRI_mean": 15e-6,        # Mean PRI: 15 microseconds
-        "PRI_agile_ampl": 0.1     # 10% stagger amplitude
-    }
-    
-    waveform_lfm = generate_waveform(transmitter_lfm)
-    t_lfm = np.arange(len(waveform_lfm)) / transmitter_lfm["f_s"]
-    
-    # Example 3: Barker coded pulse
-    print("Generating Barker coded pulse waveform...")
-    transmitter_barker = {
-        "f_c": 10e6,              # Carrier frequency: 10 MHz
-        "f_s": 100e6,             # Sampling frequency: 100 MHz
-        "pulse_width": 1e-6,      # Pulse width: 1 microsecond
-        "transmitter_type": "barker",
-        "wave_param_L": 13,       # Barker code length (must be 2,3,4,5,7,11,13)
-        "wave_param_B": 1e6,      # Not used for Barker
-        "number_of_pulse": 4,     # Number of pulses
-        "PRI_mode": "jittered",   # Jittered PRI
-        "PRI_mean": 12e-6,        # Mean PRI: 12 microseconds
-        "PRI_agile_ampl": 0.05    # 5% jitter amplitude
-    }
-    
-    waveform_barker = generate_waveform(transmitter_barker)
-    t_barker = np.arange(len(waveform_barker)) / transmitter_barker["f_s"]
-    
-    # Print waveform information
-    print(f"\nWaveform Statistics:")
-    print(f"Rectangular: Length={len(waveform_rect)}, Duration={t_rect[-1]*1e6:.2f} μs")
-    print(f"LFM: Length={len(waveform_lfm)}, Duration={t_lfm[-1]*1e6:.2f} μs")
-    print(f"Barker: Length={len(waveform_barker)}, Duration={t_barker[-1]*1e6:.2f} μs")
