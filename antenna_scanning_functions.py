@@ -534,25 +534,57 @@ def animate_pattern_and_gain(pattern, scan_az_deg, scan_el_deg, target_az_deg, t
     fig.tight_layout()
     plt.show()
 
+def antenna_gain_calculator(pattern, scan_az_deg, scan_el_deg, target_az_deg, target_el_deg):
+    az_vals = np.asarray(pattern["Az_deg"], dtype=float)
+    el_vals = np.asarray(pattern["El_deg"], dtype=float)
+    gain_vals = np.asarray(pattern["Gain_linear"], dtype=float)
+
+    rel_el = float(target_el_deg) - float(scan_el_deg)
+    rel_az = (float(target_az_deg) - float(scan_az_deg)) % 360.0
+    rel_az = (rel_az + 180.0) % 360.0 - 180.0
+    rel_el = max(-90.0, min(90.0, rel_el))
+    
+    az_diff = np.abs((az_vals - rel_az + 180.0) % 360.0 - 180.0)
+    el_diff = np.abs(el_vals - rel_el)
+    total_diff = np.hypot(az_diff, el_diff)
+
+    idx_sorted = np.argsort(total_diff)
+    i1, i2 = idx_sorted[:2]
+    d1, d2 = total_diff[i1], total_diff[i2]
+    g1, g2 = gain_vals[i1], gain_vals[i2]
+
+    # handle identical distance case
+    if d1 == 0:
+        gain = g1
+    else:
+        gain = (g1 * d2 + g2 * d1) / (d1 + d2)
+    return gain
+
 if __name__ == "__main__":
     # 1) Load pattern and build interpolator once
-    pattern = load_radiation_pattern("reflector")
+    pattern = load_radiation_pattern("parabolic_reflector")
+
+
     interp = build_gain_interpolator(pattern)
 
     # 2) Fixed receiver direction in world coordinates (az/el in degrees)
-    target_az_deg = 50.0
-    target_el_deg = 30.0
+    target_az_deg = 22.0
+    target_el_deg = -72.0
 
     # 3) Generate a simple circular scan at elevation 0
-    scan_az_deg, scan_el_deg = circular_scanning(5, 50, 0)
+    scan_az_deg_list, scan_el_deg_list = circular_scanning(5, -10, 10)
+    for scan_az_deg in scan_az_deg_list:
+        for scan_el_deg in scan_el_deg_list:
+            antenna_gain = antenna_gain_calculator(pattern, scan_az_deg, scan_el_deg, target_az_deg, target_el_deg)
+            print(antenna_gain)
 
     # 4) Compute antenna gain toward receiver for each scan step
     gains_linear = []
     for az_cur, el_cur in zip(scan_az_deg, scan_el_deg):
-        g = compute_antenna_gain_towards_target(
-            interp, az_cur, el_cur, target_az_deg, target_el_deg, return_dBi=False
-        )
+        g = compute_antenna_gain_towards_target(pattern, az_cur, el_cur, target_az_deg, target_el_deg, return_dBi=False)
+        print(g)
         gains_linear.append(g)
+
     # 5) One figure: rotating pattern (left) + live gain trace (right)
     animate_pattern_and_gain(
         pattern,

@@ -32,8 +32,15 @@ def assign_emitters(fs,frame_duration):
         # Motion & tracking
         start_position=[3e3, 3e3, 0],
         velocity=[0, 0, 0],
-    )
 
+        Antenna_Scanning_Type="circular_scanning",
+        Antenna_Scanning_step=10,
+        Antenna_Scanning_sector_Azimuth=0,
+        Antenna_Scanning_sector_elevation=0,
+        antenna_radiation_pattern="parabolic_reflector",
+    )
+    emitter_1.set_scanning_type()
+    emitter_1.set_radiation_pattern()
     # Emitter 2: Complexity 2   (uçak acqusition)
     emitter_2 = Emitter(
         # Identification & basic configuration
@@ -59,7 +66,15 @@ def assign_emitters(fs,frame_duration):
         # Motion & tracking
         start_position=[3e3, 3e3 * np.sqrt(3), 500],
         velocity=[0, 0, 0],
+        Antenna_Scanning_Type="circular_scanning",
+        Antenna_Scanning_step=10,
+        Antenna_Scanning_sector_Azimuth=40,
+        Antenna_Scanning_sector_elevation=0,
+        antenna_radiation_pattern="horn",
     )
+    emitter_2.set_scanning_type()
+    emitter_2.set_radiation_pattern()
+
 
     # Emitter 3: Complexity 2  (uçak acqusition)
     emitter_3 = Emitter(
@@ -85,6 +100,10 @@ def assign_emitters(fs,frame_duration):
         # Motion & tracking
         start_position=[3e3 * np.sqrt(3), 3e3, 1000],
         velocity=[0, 0, 0],
+        Antenna_Scanning_Type="circular_scanning",
+        Antenna_Scanning_step=10,
+        Antenna_Scanning_sector_Azimuth=0,
+        Antenna_Scanning_sector_elevation=0,
     )
 
     # Emitter 4: Complexity 1  (early warning- Gemi)
@@ -138,25 +157,26 @@ def assign_emitters(fs,frame_duration):
         start_position=[3e3, 3e3 * (np.sqrt(3) + 2), 0],
         velocity=[0, 0, 0],
     )
-    emitters = [emitter_1, emitter_2, emitter_3, emitter_4, emitter_5]
+    
+    emitters = [emitter_1 ] #, emitter_2, emitter_3, emitter_4, emitter_5]
     emitters[0].locked_target= [0, 0, 0]
     print("Emitter 1 parameter validation:")
     emitters[0].check_parameter_limits_valid()
 
-    emitters[1].locked_target= [0, 0, 0]
-    print("Emitter 2 parameter validation:")
-    emitters[1].check_parameter_limits_valid()
+    # emitters[1].locked_target= [0, 0, 0]
+    # print("Emitter 2 parameter validation:")
+    # emitters[1].check_parameter_limits_valid()
 
-    emitters[2].locked_target= [0, 0, 0]
-    print("Emitter 3 parameter validation:")
-    emitters[2].check_parameter_limits_valid()
+    # emitters[2].locked_target= [0, 0, 0]
+    # print("Emitter 3 parameter validation:")
+    # emitters[2].check_parameter_limits_valid()
     
-    emitters[3].locked_target= [0, 0, 0]
-    print("Emitter 4 parameter validation:")
-    emitters[3].check_parameter_limits_valid()
+    # emitters[3].locked_target= [0, 0, 0]
+    # print("Emitter 4 parameter validation:")
+    # emitters[3].check_parameter_limits_valid()
 
-    emitters[4].locked_target= [0, 0, 0]
-    print("Emitter 5 parameter validation:")
-    emitters[4].check_parameter_limits_valid()
+    # emitters[4].locked_target= [0, 0, 0]
+    # print("Emitter 5 parameter validation:")
+    # emitters[4].check_parameter_limits_valid()
     return emitters
 

@@ -3,6 +3,7 @@ import random
 from types import NoneType
 import numpy as np
 from wave_generator_functions import pri_values, generate_waveform
+from antenna_scanning_functions import load_radiation_pattern, circular_scanning, unidirectional_sector_scanning, bidirectional_sector_scanning, raster_scanning, raster_sector_scanning_centering_a_target
 global c
 c= 299792458
 class Emitter:
@@ -48,7 +49,9 @@ class Emitter:
         self.Antenna_Scanning_sector_Azimuth = Antenna_Scanning_sector_Azimuth
         self.Antenna_Scanning_sector_elevation = Antenna_Scanning_sector_elevation
         self.antenna_radiation_pattern = antenna_radiation_pattern
-
+        self.is_scanning=True
+        self.scan_index=0
+        self.first_transmit=True
         
 
 
@@ -97,10 +100,11 @@ class Emitter:
     def set_wave_param_B(self):
         if self.wave_type == "costas" or self.wave_type == "LFM":
             self.wave_param_B = random.uniform(self.wave_param_B_range[0], self.wave_param_B_range[1])
-        else:
+        elif self.wave_type in ["frank", "p1", "p2"]:
+            self.wave_param_B = self.wave_param_L*self.wave_param_L/self.pulse_width
+        elif self.wave_type in ["rect", "barker", "p3", "p4"]:
             self.wave_param_B = self.wave_param_L/self.pulse_width
         return self
-
 
     def generate_waveform(self):
         self.set_waveform_type()
@@ -143,25 +147,23 @@ class Emitter:
         self.antenna_gain = self.antenna_gain_calculator(self.current_position, self.locked_target_position)
         return self
     
-    def radiation_pattern_calculator(self):
-        if self.Antenna_Scanning_Type == "deneme":
-            elevation = np.linspace(-90, 90, 180)
-            azimuth = np.linspace(-180, 180, 360)
-            el_grid, az_grid = np.meshgrid(elevation, azimuth, indexing="ij")
+    def set_radiation_pattern(self):
+        self.radiation_pattern = load_radiation_pattern(self.antenna_radiation_pattern)
+        return self
 
-            sigma_el = 15.0
-            sigma_az = 15.0
-            norm = 1.0 / (2.0 * np.pi * sigma_el * sigma_az)
-            pdf = norm * np.exp(
-                -0.5 * ((el_grid / sigma_el) ** 2 + (az_grid / sigma_az) ** 2)
-            )
-
-            self.antenna_radiation_pattern = np.column_stack(
-                (el_grid.ravel(), az_grid.ravel(), pdf.ravel())
-            )
+    def set_scanning_type(self):
+        if self.Antenna_Scanning_Type == "circular_scanning":
+            self.scan_az_deg_list, self.scan_el_deg_list = circular_scanning(self.Antenna_Scanning_step, self.Antenna_Scanning_sector_Azimuth, self.Antenna_Scanning_sector_elevation)
+        elif self.Antenna_Scanning_Type == "unidirectional_sector_scanning":
+            self.scan_az_deg_list, self.scan_el_deg_list = unidirectional_sector_scanning(self.Antenna_Scanning_step, self.Antenna_Scanning_sector_Azimuth)
+        elif self.Antenna_Scanning_Type == "bidirectional_sector_scanning":
+            self.scan_az_deg_list, self.scan_el_deg_list = bidirectional_sector_scanning(self.Antenna_Scanning_step, self.Antenna_Scanning_sector_Azimuth)
+        elif self.Antenna_Scanning_Type == "raster_scanning":
+            self.scan_az_deg_list, self.scan_el_deg_list = raster_scanning(self.Antenna_Scanning_step)
+        elif self.Antenna_Scanning_Type == "raster_sector_scanning_centering_a_target":
+            self.scan_az_deg_list, self.scan_el_deg_list = raster_sector_scanning_centering_a_target(self.Antenna_Scanning_step, self.Antenna_Scanning_sector_Azimuth)
         return self
         
-
     def check_parameter_limits_valid(self):
         max_waveform_length=self.number_of_pulse_range[1]*self.PRI_mean_range[1]+self.PW_range[1]
         if max_waveform_length>self.frame_duration:
@@ -180,4 +182,52 @@ class Emitter:
         if max_frequency>self.fs/2:
             print("Maximum frequency is greater than Nyquist frequency")
         return 0
+
+    def antenna_gain_calculator(self, scan_az_deg, scan_el_deg, target_az_deg, target_el_deg):
+        az_vals = np.asarray( self.radiation_pattern["Az_deg"], dtype=float)
+        el_vals = np.asarray( self.radiation_pattern["El_deg"], dtype=float)
+        gain_vals = np.asarray( self.radiation_pattern["Gain_linear"], dtype=float)
+
+        rel_el = float(target_el_deg) - float(scan_el_deg)
+        rel_az = (float(target_az_deg) - float(scan_az_deg)) % 360.0
+        rel_az = (rel_az + 180.0) % 360.0 - 180.0
+        rel_el = max(-90.0, min(90.0, rel_el))
+        
+        az_diff = np.abs((az_vals - rel_az + 180.0) % 360.0 - 180.0)
+        el_diff = np.abs(el_vals - rel_el)
+        total_diff = np.hypot(az_diff, el_diff)
+
+        idx_sorted = np.argsort(total_diff)
+        i1, i2 = idx_sorted[:2]
+        d1, d2 = total_diff[i1], total_diff[i2]
+        g1, g2 = gain_vals[i1], gain_vals[i2]
+
+        # handle identical distance case
+        if d1 == 0:
+            gain = g1
+        else:
+            gain = (g1 * d2 + g2 * d1) / (d1 + d2)
+        return gain    
+
+    def scanning(self):
+        if self.is_scanning==True:
+            target_vector = -1 * self.current_position
+            target_distance_xy = np.hypot(target_vector[0], target_vector[1])
+            target_el = np.rad2deg(np.arctan2(target_vector[2], target_distance_xy))
+            target_az = (np.rad2deg(np.arctan2(target_vector[1], target_vector[0])) + 180.0) % 360.0 - 180.0
+            scan_az_deg = self.scan_az_deg_list[self.scan_index]
+            scan_el_deg = self.scan_el_deg_list[self.scan_index]
+            self.scan_index+=1
+            if self.scan_index==len(self.scan_az_deg_list):
+                self.is_scanning=False
+                self.scan_index=0
+        else:
+            if random.random()<0.1:
+                self.is_scanning=True
+                self.scan_index=0
+
+
+        return scan_az_deg, scan_el_deg,target_el,target_az
+
+    
 

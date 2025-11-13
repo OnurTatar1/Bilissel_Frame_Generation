@@ -126,9 +126,9 @@ def snr_clutter_example():
     plt.show()
     return frame_signal, clutter, noisy_signal
 
-def add_awgn_noise(frame, snr_db):
-    snr_linear = 10**(snr_db / 10)
-    noise_power = 1 / snr_linear
+def add_awgn_noise(frame, AWGN_power_db):
+    AWGN_power_linear = 10**(AWGN_power_db / 10)
+    noise_power = AWGN_power_linear
     noise_std = np.sqrt(noise_power / 2)  # Her component için std
     noise_real = np.random.normal(0, noise_std, frame.shape)
     noise_imag = np.random.normal(0, noise_std, frame.shape)

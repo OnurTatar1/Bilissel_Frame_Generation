@@ -124,30 +124,25 @@ def plot_spectrogram_stft_with_rectangles(signal: np.ndarray,
 
     for i, train in enumerate(train_info):
         wave_type = train['type']
-        start_time_ratio = train['start_index_ratio']
-        length_time_ratio = train['waveform_length_ratio']
-        start_freq_ratio = train['fc_ratio']
-        bandwidth_ratio = train['band_width_ratio']
+        x_center_ratio = train['x_center_ratio']
+        y_center_ratio = train['y_center_ratio']
+        x_width_ratio = train['x_width_ratio']
+        y_width_ratio = train['y_width_ratio']
 
-        start_time_ms = start_time_ratio * frame_duration_s * 1e3
-        length_time_ms = length_time_ratio * frame_duration_s * 1e3
-        length_freq_mhz = bandwidth_ratio * (fs/2) / 1e6
-        start_freq_mhz = start_freq_ratio * (fs/2) / 1e6
+        x_center_ms = x_center_ratio * frame_duration_s * 1e3
+        y_center_mhz = (1-y_center_ratio) * (fs/2) / 1e6
+        x_width_ms = x_width_ratio * frame_duration_s * 1e3
+        y_width_mhz = y_width_ratio * (fs/2) / 1e6
 
-        if length_freq_mhz == 0:
-            plt.hlines(y=start_freq_mhz,
-                       xmin=start_time_ms,
-                       xmax=start_time_ms + length_time_ms,
-                       colors='red', linewidth=2, alpha=0.8)
-        else:
-            from matplotlib.patches import Rectangle
-            rect = Rectangle((start_time_ms, start_freq_mhz),
-                             width=length_time_ms, height=length_freq_mhz,
-                             linewidth=2, edgecolor='red', facecolor='none', alpha=0.8)
-            plt.gca().add_patch(rect)
+        
+        from matplotlib.patches import Rectangle
+        rect = Rectangle((x_center_ms-x_width_ms/2, y_center_mhz-y_width_mhz/2),
+                            width=x_width_ms, height=y_width_mhz,
+                            linewidth=2, edgecolor='red', facecolor='none', alpha=0.8)
+        plt.gca().add_patch(rect)
 
         label = train.get('type', f'Train {i+1}')
-        plt.text(start_time_ms + max(length_time_ms/2, 1e-3), start_freq_mhz,
+        plt.text(x_center_ms-x_width_ms/2 + max(x_width_ms/2, 1e-3), y_center_mhz-y_width_mhz/2,
                  label, ha='center', va='center', color='red', fontweight='bold', fontsize=8)
 
     plt.tight_layout()
